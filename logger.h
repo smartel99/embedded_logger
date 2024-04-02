@@ -35,9 +35,20 @@ class Logger {
         std::optional<std::vector<std::unique_ptr<Sink>>> sinks = std::nullopt;
     };
 
+public:
+    struct LoggerView {
+        std::string_view                    tag;
+        Level*                              level = &s_globalLevel;
+        std::vector<std::unique_ptr<Sink>>* sinks = &s_globalSinks;
+
+        bool shouldLog(Level desiredLevel) { return desiredLevel < *level; }
+    };
+
     using GetTimeFunc = std::uint32_t (*)();
 
 private:
+    //! print number of bytes per line for writeHexArray and writeCharArray
+    static constexpr std::size_t                     s_bytesPerLine = 16;
     static constexpr Level                           s_defaultLevel = Level::all;
     inline static Level                              s_globalLevel  = s_defaultLevel;
     inline static std::vector<std::unique_ptr<Sink>> s_globalSinks  = {};
@@ -49,45 +60,106 @@ public:
     static void          setGetTime(GetTimeFunc getTime);
     static std::uint32_t getTime() { return s_getTime(); }
 
+    static LoggerView getLogger(std::string_view tag);
+
     // TODO: This should allow us to add an already existing sink...
     template<typename T, typename... Args>
         requires std::derived_from<T, Sink> && std::constructible_from<T, Args...>
-    static void addSink(Args&&... args)
+    static T* addSink(Args&&... args)
     {
         s_globalSinks.push_back(std::make_unique<T>(std::forward<Args>(args)...));
+        return s_globalSinks.back().get();
     }
-    static void clearSinks() { s_globalSinks.clear(); }
-    static void setLevel(Level level) { s_globalLevel = level; }
-    static void clearLevel() { s_globalLevel = s_defaultLevel; }
+    static void  clearSinks() { s_globalSinks.clear(); }
+    static void  setLevel(Level level) { s_globalLevel = level; }
+    static Level getLevel() { return s_globalLevel; }
+    static void  clearLevel() { s_globalLevel = s_defaultLevel; }
 
     template<typename T, typename... Args>
         requires std::derived_from<T, Sink> && std::constructible_from<T, Args...>
-    static void addSink(std::string_view tag, Args&&... args)
+    static T* addSink(std::string_view tag, Args&&... args)
     {
         auto& sink = s_loggers[tag];
         if (!sink.sinks) { sink.sinks = {}; }
         sink.sinks->push_back(std::make_unique<T>(std::forward<Args>(args)...));
+        return s_globalSinks.back().get();
     }
 
-    static void clearSinks(std::string_view tag);
-    static void setLevel(std::string_view tag, Level level);
-    static void clearLevel(std::string_view tag);
+    static void  clearSinks(std::string_view tag);
+    static void  setLevel(std::string_view tag, Level level);
+    static Level getLevel(std::string_view tag);
+    static void  clearLevel(std::string_view tag);
 
-    static void write(std::string_view tag, Level level, const char* fmt, ...);
-    static void vWrite(std::string_view tag, Level level, const char* fmt, va_list args);
+    static void write(LoggerView logger, Level level, const char* fmt, ...);
+    static void vWrite(LoggerView logger, Level level, const char* fmt, va_list args);
 
-private:
-    static void vWriteImpl(
-      Level currentLevel, std::vector<std::unique_ptr<Sink>>& sinks, Level desiredLevel, const char* fmt, va_list args);
+    /**
+     * @brief Log a buffer of hex bytes at specified level, separated into 16 bytes each line.
+     *
+     * @param  logger view of the logger and its sinks
+     * @param  level    level of the log
+     * @param  buf   Pointer to the buffer array
+     * @param  len length of buffer in bytes
+     */
+    static void writeHexArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len);
+
+    /**
+     * @brief Log a buffer of characters at specified level, separated into 16 bytes each line. Buffer should contain
+     * only printable characters.
+     *
+     * @param  logger view of the logger and its sinks
+     * @param  level    level of the log
+     * @param  buf   Pointer to the buffer array
+     * @param  len length of buffer in bytes
+     */
+    static void writeCharArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len);
+
+    /**
+     * @brief Dump a buffer to the log at specified level.
+     *
+     * The dump log shows just like the one below:
+     *
+     *      W (195) log_example: 0x3ffb4280   45 53 50 33 32 20 69 73  20 67 72 65 61 74 2c 20  |ESP32 is great, |
+     *      W (195) log_example: 0x3ffb4290   77 6f 72 6b 69 6e 67 20  61 6c 6f 6e 67 20 77 69  |working along wi|
+     *      W (205) log_example: 0x3ffb42a0   74 68 20 74 68 65 20 49  44 46 2e 00              |th the IDF..|
+     *
+     * It is highly recommended to use terminals with over 102 text width.
+     *
+     * @param  logger view of the logger and its sinks
+     * @param  level level of the log
+     * @param  buf Pointer to the buffer array
+     * @param  len length of buffer in bytes
+     */
+    static void writeHexdumpArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len);
 };
 }    // namespace Logging
 
+#ifdef __GNUC__
+#    define LOGGER_HELPER_MSG_IS_STRING_LITERAL(x)                                                                     \
+        static_assert(__builtin_constant_p(x) == 1, "msg must be a string literal!");
+#else
+#    define LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL(x)                                                                \
+        ([&]<typename T = char>() {                                                                                    \
+            return std::is_same_v<decltype(x), T const(&)[sizeof(x)]> &&                                               \
+                   requires { std::type_identity_t<T[sizeof(x) + 1]> {x}; };                                           \
+        }())
+#    define LOGGER_HELPER_MSG_IS_STRING_LITERAL(x)                                                                     \
+        static_assert(LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL(x), "msg must be a string literal!")
+#endif
+
+#define LOGGER_LOG_HELPER_IMPL(logger, level, msg, ...)                                                                \
+    do {                                                                                                               \
+        LOGGER_HELPER_MSG_IS_STRING_LITERAL(msg);                                                                      \
+        ::Logging::Logger::write(logger,                                                                               \
+                                 level,                                                                                \
+                                 "%c (%05lu) [%s] " msg "\r\n",                                                        \
+                                 ::Logging::levelToChar(level),                                                        \
+                                 ::Logging::Logger::getTime(),                                                         \
+                                 logger.tag.data() __VA_OPT__(, ) __VA_ARGS__);                                        \
+    } while (0)
+
 #define LOGGER_LOG_HELPER(tag, level, msg, ...)                                                                        \
-    ::Logging::Logger::write(tag,                                                                                      \
-                             level,                                                                                    \
-                             "%s (%05lu) [" tag "] " msg "\r\n",                                                       \
-                             ::Logging::levelToChar(level),                                                          \
-                             ::Logging::Logger::getTime() __VA_OPT__(, ) __VA_ARGS__)
+    LOGGER_LOG_HELPER_IMPL(::Logging::Logger::getLogger(tag), level, msg, __VA_ARGS__)
 
 #define LOGT(tag, msg, ...) LOGGER_LOG_HELPER(tag, ::Logging::Level::trace, msg __VA_OPT__(, ) __VA_ARGS__)
 #define LOGD(tag, msg, ...) LOGGER_LOG_HELPER(tag, ::Logging::Level::debug, msg __VA_OPT__(, ) __VA_ARGS__)
@@ -102,6 +174,26 @@ private:
 #define ROOT_LOGI(msg, ...) LOGI(ROOT_LOGGER_TAG, msg __VA_OPT__(, ) __VA_ARGS__)
 #define ROOT_LOGW(msg, ...) LOGW(ROOT_LOGGER_TAG, msg __VA_OPT__(, ) __VA_ARGS__)
 #define ROOT_LOGE(msg, ...) LOGE(ROOT_LOGGER_TAG, msg __VA_OPT__(, ) __VA_ARGS__)
+
+#define LOGGER_LOG_BUFFER_DUMP_HELPER(kind, tag, level, buff, len)                                                     \
+    ::Logging::Logger::write##kind##Array(::Logging::Logger::getLogger(tag), level, buff, len)
+
+#define LOG_BUFFER_HEX_LEVEL(tag, level, buffer, len)  LOGGER_LOG_BUFFER_DUMP_HELPER(Hex, tag, level, buffer, len)
+#define LOG_BUFFER_CHAR_LEVEL(tag, level, buffer, len) LOGGER_LOG_BUFFER_DUMP_HELPER(Char, tag, level, buffer, len)
+#define LOG_BUFFER_HEXDUMP_LEVEL(tag, level, buffer, len)                                                              \
+    LOGGER_LOG_BUFFER_DUMP_HELPER(Hexdump, tag, level, buffer, len)
+
+#define LOG_BUFFER_HEX(tag, buffer, len)     LOG_BUFFER_HEX_LEVEL(tag, ::Logging::Level::info, buffer, len)
+#define LOG_BUFFER_CHAR(tag, buffer, len)    LOG_BUFFER_CHAR_LEVEL(tag, ::Logging::Level::info, buffer, len)
+#define LOG_BUFFER_HEXDUMP(tag, buffer, len) LOG_BUFFER_HEXDUMP_LEVEL(tag, ::Logging::Level::info, buffer, len)
+
+#define ROOT_BUFFER_HEX_LEVEL(level, buffer, len)     LOG_BUFFER_HEX_LEVEL(ROOT_LOGGER_TAG, level, buffer, len)
+#define ROOT_BUFFER_CHAR_LEVEL(level, buffer, len)    LOG_BUFFER_CHAR_LEVEL(ROOT_LOGGER_TAG, level, buffer, len)
+#define ROOT_BUFFER_HEXDUMP_LEVEL(level, buffer, len) LOG_BUFFER_HEXDUMP_LEVEL(ROOT_LOGGER_TAG, level, buffer, len)
+
+#define ROOT_BUFFER_HEX(buffer, len)     ROOT_BUFFER_HEX_LEVEL(::Logging::Level::info, buffer, len)
+#define ROOT_BUFFER_CHAR(buffer, len)    ROOT_BUFFER_CHAR_LEVEL(::Logging::Level::info, buffer, len)
+#define ROOT_BUFFER_HEXDUMP(buffer, len) ROOT_BUFFER_HEXDUMP_LEVEL(::Logging::Level::info, buffer, len)
 
 
 

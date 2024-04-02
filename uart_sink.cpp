@@ -38,7 +38,7 @@ namespace Logging {
 #define LOG_COLOR_D      LOG_RESET_COLOR
 #define LOG_COLOR_T      LOG_COLOR(LOG_COLOR_CYAN)
 #define LOG_BELL_E       "\a"
-#define LOG_BELL_W       "\a"
+#define LOG_BELL_W
 #define LOG_BELL_I
 #define LOG_BELL_D
 #define LOG_BELL_T
@@ -79,5 +79,4 @@ void UartSink::onWrite(Level level, const char* string, size_t length)
           m_uart, reinterpret_cast<const uint8_t*>(s_resetColor.data()), s_resetColor.size(), HAL_MAX_DELAY);
     }
 }
-
 }    // namespace Logging

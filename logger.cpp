@@ -28,26 +28,27 @@ void Logger::setGetTime(Logger::GetTimeFunc getTime)
     s_getTime = getTime;
 }
 
-void Logger::write(std::string_view tag, Level level, const char* fmt, ...)
+void Logger::write(LoggerView logger, Level level, const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    vWrite(tag, level, fmt, args);
+    vWrite(logger, level, fmt, args);
     va_end(args);
 }
 
-void Logger::vWrite(std::string_view tag, Level level, const char* fmt, va_list args)
+void Logger::vWrite(LoggerView logger, Level level, const char* fmt, va_list args)
 {
-    Level* currentLevel = &s_globalLevel;
-    auto*  sinks        = &s_globalSinks;
-
-    auto logger = s_loggers.find(tag);
-    if (logger != s_loggers.end()) {
-        if (logger->second.level.has_value()) { currentLevel = &logger->second.level.value(); }
-        if (logger->second.sinks.has_value()) { sinks = &logger->second.sinks.value(); }
+    if (!logger.shouldLog(level)) {
+        // This level is disabled.
+        return;
     }
-
-    vWriteImpl(*currentLevel, *sinks, level, fmt, args);
+    static constexpr size_t maxLength = 512;
+    char                    buffer[maxLength];
+    size_t                  length = vsnprintf(&buffer[0], maxLength, fmt, args);
+    assert(length < maxLength && "String too long to be logged");
+    for (auto&& sink : *logger.sinks) {
+        sink->onWrite(level, &buffer[0], length);
+    }
 }
 
 void Logger::clearSinks(std::string_view tag)
@@ -66,6 +67,12 @@ void Logger::setLevel(std::string_view tag, Level level)
     s_loggers[tag].level = level;
 }
 
+Level Logger::getLevel(std::string_view tag)
+{
+    auto [t, level, sinks] = getLogger(tag);
+    return *level;
+}
+
 void Logger::clearLevel(std::string_view tag)
 {
     auto it = s_loggers.find(tag);
@@ -77,19 +84,107 @@ void Logger::clearLevel(std::string_view tag)
     if (!it->second.sinks.has_value()) { s_loggers.erase(it); }
 }
 
-void Logger::vWriteImpl(
-  Level currentLevel, std::vector<std::unique_ptr<Sink>>& sinks, Level desiredLevel, const char* fmt, va_list args)
+Logger::LoggerView Logger::getLogger(std::string_view tag)
 {
-    if (desiredLevel > currentLevel) {
-        // This level is disabled.
-        return;
+    LoggerView logger = {.tag = tag, .level = &s_globalLevel, .sinks = &s_globalSinks};
+
+    auto loggerIt = s_loggers.find(tag);
+    if (loggerIt != s_loggers.end()) {
+        if (loggerIt->second.level.has_value()) { logger.level = &loggerIt->second.level.value(); }
+        if (loggerIt->second.sinks.has_value()) { logger.sinks = &loggerIt->second.sinks.value(); }
     }
-    static constexpr size_t maxLength = 500;
-    char                    buffer[maxLength];
-    size_t                  length = vsnprintf(buffer, maxLength, fmt, args);
-    for (auto&& sink : sinks) {
-        sink->onWrite(desiredLevel, buffer, length);
-    }
+
+    return logger;
+}
+
+void Logger::writeHexArray(Logger::LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
+{
+    if (!logger.shouldLog(level)) { return; }
+    if (len == 0 || buff == nullptr) { return; }
+    char                hexBuffer[3 * s_bytesPerLine + 1];
+    const std::uint8_t* ptrLine      = nullptr;
+    std::size_t         bytesCurLine = 0;
+
+    do {
+        if (len > s_bytesPerLine) { bytesCurLine = s_bytesPerLine; }
+        else {
+            bytesCurLine = len;
+        }
+        ptrLine = buff;
+
+        for (std::size_t i = 0; i < bytesCurLine; i++) {
+            std::snprintf(&hexBuffer[0] + 3 * i, sizeof(hexBuffer) - (3 * i), "%02x ", ptrLine[i]);
+        }
+        LOGGER_LOG_HELPER_IMPL(logger, level, "%s", &hexBuffer[0]);
+        buff += bytesCurLine;
+        len -= bytesCurLine;
+    } while (len != 0);
+}
+
+void Logger::writeCharArray(Logger::LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
+{
+    if (!logger.shouldLog(level)) { return; }
+    if (len == 0 || buff == nullptr) { return; }
+    char                charBuffer[s_bytesPerLine + 1];
+    const std::uint8_t* ptrLine      = nullptr;
+    std::size_t         bytesCurLine = 0;
+
+    do {
+        if (len > s_bytesPerLine) { bytesCurLine = s_bytesPerLine; }
+        else {
+            bytesCurLine = len;
+        }
+        ptrLine = buff;
+
+        for (std::size_t i = 0; i < bytesCurLine; i++) {
+            sprintf(&charBuffer[0] + i, "%c", ptrLine[i]);
+        }
+        LOGGER_LOG_HELPER_IMPL(logger, level, "%s", &charBuffer[0]);
+        buff += bytesCurLine;
+        len -= bytesCurLine;
+    } while (len != 0);
+}
+
+void Logger::writeHexdumpArray(Logger::LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
+{
+    if (!logger.shouldLog(level)) { return; }
+    if (len == 0 || buff == nullptr) { return; }
+    const std::uint8_t* ptrLine = nullptr;
+    // format: field[length]
+    //  ADDR[10]+"   "+DATA_HEX[8*3]+" "+DATA_HEX[8*3]+"  |"+DATA_CHAR[8]+"|"
+    char        hdBuffer[10 + 3 + s_bytesPerLine * 3 + 3 + s_bytesPerLine + 1 + 1];
+    char*       ptrHd        = nullptr;
+    std::size_t bytesCurLine = 0;
+
+    do {
+        if (len > s_bytesPerLine) { bytesCurLine = s_bytesPerLine; }
+        else {
+            bytesCurLine = len;
+        }
+        ptrLine = buff;
+        ptrHd   = &hdBuffer[0];
+
+        ptrHd += std::sprintf(ptrHd, "%p ", reinterpret_cast<const void*>(buff));
+        for (std::size_t i = 0; i < s_bytesPerLine; i++) {
+            if ((i & 7) == 0) { ptrHd += std::sprintf(ptrHd, " "); }
+            if (i < bytesCurLine) { ptrHd += std::sprintf(ptrHd, " %02x", ptrLine[i]); }
+            else {
+                ptrHd += std::sprintf(ptrHd, "   ");
+            }
+        }
+        ptrHd += std::sprintf(ptrHd, "  |");
+        for (std::size_t i = 0; i < bytesCurLine; i++) {
+            if (std::isprint(static_cast<int>(ptrLine[i])) != 0) { ptrHd += std::sprintf(ptrHd, "%c", ptrLine[i]); }
+            else {
+                ptrHd += std::sprintf(ptrHd, ".");
+            }
+        }
+        ptrHd += std::sprintf(ptrHd, "|");
+
+        LOGGER_LOG_HELPER_IMPL(logger, level, "%s", &hdBuffer[0]);
+        buff += bytesCurLine;
+        len -= bytesCurLine;
+    } while (len != 0);
 }
 
 }    // namespace Logging

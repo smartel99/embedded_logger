@@ -29,19 +29,18 @@ enum class Level : std::uint8_t {
     trace,
     all,
 };
-static_assert(Level::trace < Level::all);
 
-static const char* levelToChar(Level level)
+static char levelToChar(Level level)
 {
     switch (level) {
-        case Level::error: return "E";
-        case Level::warning: return "W";
-        case Level::info: return "I";
-        case Level::debug: return "D";
-        case Level::trace: return "T";
+        case Level::error: return 'E';
+        case Level::warning: return 'W';
+        case Level::info: return 'I';
+        case Level::debug: return 'D';
+        case Level::trace: return 'T';
         case Level::none:
         case Level::all:
-        default: return "?";
+        default: return '?';
     }
 }
 }    // namespace Logging
