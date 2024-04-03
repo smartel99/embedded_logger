@@ -28,6 +28,7 @@
 #include "level.h"
 #include "sink.h"
 
+// TODO the whole sink thing begs for dangling pointers to happen when a sink or a logger gets removed...
 namespace Logging {
 class Logger {
     struct LoggerInstance {
@@ -68,7 +69,7 @@ public:
     static T* addSink(Args&&... args)
     {
         s_globalSinks.push_back(std::make_unique<T>(std::forward<Args>(args)...));
-        return s_globalSinks.back().get();
+        return static_cast<T*>(s_globalSinks.back().get());
     }
     static void  clearSinks() { s_globalSinks.clear(); }
     static void  setLevel(Level level) { s_globalLevel = level; }
@@ -80,9 +81,9 @@ public:
     static T* addSink(std::string_view tag, Args&&... args)
     {
         auto& sink = s_loggers[tag];
-        if (!sink.sinks) { sink.sinks = {}; }
+        if (!sink.sinks) { sink.sinks = std::vector<std::unique_ptr<Sink>>{}; }
         sink.sinks->push_back(std::make_unique<T>(std::forward<Args>(args)...));
-        return s_globalSinks.back().get();
+        return static_cast<T*>(sink.sinks->back().get());
     }
 
     static void  clearSinks(std::string_view tag);

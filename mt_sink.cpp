@@ -1,7 +1,7 @@
 /**
- * @file    uart_sink.h
- * @author  Paul Thomas
- * @date    2023-12-04
+ * @file    mt_sink.cpp
+ * @author  Samuel Martel
+ * @date    2024-04-02
  * @brief
  *
  * @copyright
@@ -14,29 +14,8 @@
  * You should have received a copy of the GNU General Public License along with this program. If
  * not, see <a href=https://www.gnu.org/licenses/>https://www.gnu.org/licenses/</a>.
  */
-#ifndef UART_SINK_H
-#define UART_SINK_H
-#include "sink.h"
-#include "usart.h"
+#include "mt_sink.h"
 
 namespace Logging {
 
-class UartSink : public Sink {
-private:
-    UART_HandleTypeDef* m_uart;
-
-public:
-    explicit UartSink(UART_HandleTypeDef* handle) : m_uart(handle) {}
-    UartSink(const UartSink&)            = delete;
-    UartSink(UartSink&&)                 = delete;
-    UartSink& operator=(const UartSink&) = delete;
-    UartSink& operator=(UartSink&&)      = delete;
-
-    ~UartSink() override = default;
-
-    void onWrite(Level level, const char* string, size_t length) override;
-};
-
-}    // namespace Logging
-
-#endif    // UART_SINK_H
+}

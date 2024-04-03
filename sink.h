@@ -17,7 +17,6 @@
 #ifndef SINK_H
 #define SINK_H
 
-#include <cstdarg>
 #include <cstddef>
 
 #include "level.h"
@@ -28,7 +27,7 @@ class Sink {
  public:
   virtual ~Sink() = default;
 
-  virtual void onWrite(Level level, const char* string, size_t length) = 0;
+  virtual void onWrite(Level level, const char* string, std::size_t length) = 0;
 };
 
 }  // namespace Logging

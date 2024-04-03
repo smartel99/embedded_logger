@@ -1,7 +1,7 @@
 /**
- * @file    uart_sink.h
- * @author  Paul Thomas
- * @date    2023-12-04
+ * @file    proxy_sink.h
+ * @author  Samuel Martel
+ * @date    2024-04-02
  * @brief
  *
  * @copyright
@@ -14,29 +14,29 @@
  * You should have received a copy of the GNU General Public License along with this program. If
  * not, see <a href=https://www.gnu.org/licenses/>https://www.gnu.org/licenses/</a>.
  */
-#ifndef UART_SINK_H
-#define UART_SINK_H
+
+
+#ifndef VENDOR_LOGGING_PROXY_SINK_H
+#define VENDOR_LOGGING_PROXY_SINK_H
 #include "sink.h"
-#include "usart.h"
+#include "mt_sink.h"
 
 namespace Logging {
 
-class UartSink : public Sink {
+class ProxySink : public Sink {
 private:
-    UART_HandleTypeDef* m_uart;
+    Sink* m_sink;
 
 public:
-    explicit UartSink(UART_HandleTypeDef* handle) : m_uart(handle) {}
-    UartSink(const UartSink&)            = delete;
-    UartSink(UartSink&&)                 = delete;
-    UartSink& operator=(const UartSink&) = delete;
-    UartSink& operator=(UartSink&&)      = delete;
+    explicit ProxySink(Sink* sink) : m_sink(sink) {}
+    ProxySink(const ProxySink&)            = default;
+    ProxySink(ProxySink&&)                 = default;
+    ProxySink& operator=(const ProxySink&) = default;
+    ProxySink& operator=(ProxySink&&)      = default;
+    ~ProxySink() override                  = default;
 
-    ~UartSink() override = default;
-
-    void onWrite(Level level, const char* string, size_t length) override;
+    void onWrite(Level level, const char* string, size_t length) override { m_sink->onWrite(level, string, length); }
 };
 
 }    // namespace Logging
-
-#endif    // UART_SINK_H
+#endif    // VENDOR_LOGGING_PROXY_SINK_H
