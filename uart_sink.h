@@ -18,6 +18,7 @@
 #define UART_SINK_H
 #include "sink.h"
 #include "usart.h"
+#include "mt_sink.h"
 
 namespace Logging {
 
@@ -36,6 +37,8 @@ public:
 
     void onWrite(Level level, const char* string, size_t length) override;
 };
+
+using MtUartSink = MtSink<UartSink>;
 
 }    // namespace Logging
 
