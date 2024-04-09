@@ -44,7 +44,7 @@ namespace Logging {
  * @attention T's onWrite method must accept strings that are not null terminated.
  */
 template<std::derived_from<Sink> T>
-class MtSink : public T {
+class MtSink : public Sink {
     struct MessageHeader {
         Level       level = {};
         std::size_t len   = 0;
@@ -63,7 +63,7 @@ class MtSink : public T {
     static constexpr auto s_producerMaxBlockTime = portMAX_DELAY;
 
     static constexpr std::size_t s_taskStackSize =
-      configMINIMAL_STACK_SIZE + (s_messageMaxLen / sizeof(configSTACK_DEPTH_TYPE));
+      configMINIMAL_STACK_SIZE * 2 + (s_messageMaxLen / sizeof(configSTACK_DEPTH_TYPE));
     static constexpr UBaseType_t s_taskPriority = 1;    //!< Low priority.
     //! Task will check whether it needs to stop running once every `s_taskRefreshPeriod` ms.
     static constexpr std::size_t s_taskRefreshPeriod = pdMS_TO_TICKS(10);
@@ -82,7 +82,7 @@ class MtSink : public T {
 public:
     template<typename... Args>
         requires std::constructible_from<T, Args...>
-    MtSink(Args&&... args) : T(std::forward<Args>(args)...)
+    MtSink(Args&&... args) : m_sink(std::forward<Args>(args)...)
     {
         // Create semaphore,
         m_semaphoreHandle = xSemaphoreCreateMutexStatic(&m_semaphoreBuffer);
@@ -93,7 +93,7 @@ public:
         configASSERT(m_messageBuffer != nullptr);
 
         // Create task,
-        auto res = xTaskCreate(&task, "MtSink", s_taskStackSize, this, configMAX_PRIORITIES-1, &m_task);
+        auto res = xTaskCreate(&task, "MtSink", s_taskStackSize, this, configMAX_PRIORITIES - 1, &m_task);
         configASSERT(res == pdPASS);
     }
     MtSink(const MtSink&)            = delete;
@@ -150,6 +150,13 @@ public:
         else {
             onWriteBlocking(level, string, length);
         }
+    }
+
+protected:
+    T            m_sink;
+    virtual void onWriteImpl(Level level, const char* string, std::size_t length)
+    {
+        m_sink.onWrite(level, string, length);
     }
 
 private:
@@ -242,7 +249,7 @@ private:
             if (that.m_messagesDropped != 0) {
                 char        msg[30];
                 std::size_t len = std::snprintf(&msg[0], sizeof(msg), "Dropped %d messages!", that.m_messagesDropped);
-                that.T::onWrite(Level::error, &msg[0], len);
+                that.onWriteImpl(Level::error, &msg[0], len);
                 that.m_messagesDropped = 0;
             }
 
@@ -264,7 +271,7 @@ private:
                 return true;
             }
 
-            that.T::onWrite(currentHeader.level, &rxBuff[0], received);
+            that.m_sink.onWrite(currentHeader.level, &rxBuff[0], received);
             currentHeader.len -= received;
             return currentHeader.len == 0;    // When length is 0, there's no more chunks to be received.
         };
@@ -276,8 +283,7 @@ private:
                 case States::ReceiveChunks: shouldSwitchState = receiveChunk(); break;
             }
             if (shouldSwitchState) {
-                if (currentState == States::ReceiveHeader) {
-                    currentState = States::ReceiveChunks; }
+                if (currentState == States::ReceiveHeader) { currentState = States::ReceiveChunks; }
                 else {
                     currentState = States::ReceiveHeader;
                 }

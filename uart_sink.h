@@ -14,8 +14,8 @@
  * You should have received a copy of the GNU General Public License along with this program. If
  * not, see <a href=https://www.gnu.org/licenses/>https://www.gnu.org/licenses/</a>.
  */
-#ifndef UART_SINK_H
-#define UART_SINK_H
+#ifndef VENDOR_LOGGING_UART_SINK_H
+#define VENDOR_LOGGING_UART_SINK_H
 #include "sink.h"
 #include "usart.h"
 #include "mt_sink.h"
@@ -42,4 +42,4 @@ using MtUartSink = MtSink<UartSink>;
 
 }    // namespace Logging
 
-#endif    // UART_SINK_H
+#endif    // VENDOR_LOGGING_UART_SINK_H
