@@ -63,7 +63,7 @@ class MtSink : public Sink {
     static constexpr auto s_producerMaxBlockTime = portMAX_DELAY;
 
     static constexpr std::size_t s_taskStackSize =
-      configMINIMAL_STACK_SIZE * 2 + (s_messageMaxLen / sizeof(configSTACK_DEPTH_TYPE));
+      configMINIMAL_STACK_SIZE + (s_messageMaxLen / sizeof(configSTACK_DEPTH_TYPE));
     static constexpr UBaseType_t s_taskPriority = 1;    //!< Low priority.
     //! Task will check whether it needs to stop running once every `s_taskRefreshPeriod` ms.
     static constexpr std::size_t s_taskRefreshPeriod = pdMS_TO_TICKS(10);

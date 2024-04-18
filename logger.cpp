@@ -81,7 +81,9 @@ void Logger::clearLevel(std::string_view tag)
     it->second.level = std::nullopt;
 
     // If the logger doesn't have custom sinks, straight up delete it from the list, it is useless now.
-    if (!it->second.sinks.has_value()) { s_loggers.erase(it); }
+    if (!it->second.sinks.has_value()) {
+        s_loggers.erase(it);
+    }
 }
 
 Logger::LoggerView Logger::getLogger(std::string_view tag)

@@ -42,7 +42,7 @@ public:
         Level*                              level = &s_globalLevel;
         std::vector<std::unique_ptr<Sink>>* sinks = &s_globalSinks;
 
-        bool shouldLog(Level desiredLevel) { return desiredLevel <= *level; }
+        bool shouldLog(Level desiredLevel) const { return desiredLevel <= *level; }
     };
 
     using GetTimeFunc = std::uint32_t (*)();
