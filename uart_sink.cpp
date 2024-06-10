@@ -36,7 +36,7 @@ namespace Logging {
 #define LOG_COLOR_I      LOG_COLOR(LOG_COLOR_GREEN)
 #define LOG_COLOR_D      LOG_RESET_COLOR
 #define LOG_COLOR_T      LOG_COLOR(LOG_COLOR_CYAN)
-#define LOG_BELL_E       "\a"
+#define LOG_BELL_E
 #define LOG_BELL_W
 #define LOG_BELL_I
 #define LOG_BELL_D
