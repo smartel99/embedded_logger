@@ -81,7 +81,7 @@ public:
     static T* addSink(std::string_view tag, Args&&... args)
     {
         auto& sink = s_loggers[tag];
-        if (!sink.sinks) { sink.sinks = std::vector<std::unique_ptr<Sink>>{}; }
+        if (!sink.sinks) { sink.sinks = std::vector<std::unique_ptr<Sink>> {}; }
         sink.sinks->push_back(std::make_unique<T>(std::forward<Args>(args)...));
         return static_cast<T*>(sink.sinks->back().get());
     }
@@ -148,6 +148,13 @@ public:
         static_assert(LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL(x), "msg must be a string literal!")
 #endif
 
+// Clang-tidy is recommending that size information should be provided as well since std::string_view::data() is not
+// guaranteed to be null-terminated. However:
+//  - We're giving that string to snprintf; it doesn't give a fuck about the size,
+//  - It is expected that users *only* uses string literals as the names of their loggers, so we *should* only ever get
+//  null-terminated string_views
+#define LOGGER_LOG_HELPER_IMPL_TAG_GETTER(logger) (logger).tag.data()    // NOLINT(*-suspicious-stringview-data-usage)
+
 #define LOGGER_LOG_HELPER_IMPL(logger, level, msg, ...)                                                                \
     do {                                                                                                               \
         LOGGER_HELPER_MSG_IS_STRING_LITERAL(msg);                                                                      \
@@ -156,7 +163,7 @@ public:
                                  "%c (%05lu) [%s] " msg "\r\n",                                                        \
                                  ::Logging::levelToChar(level),                                                        \
                                  ::Logging::Logger::getTime(),                                                         \
-                                 logger.tag.data() __VA_OPT__(, ) __VA_ARGS__);                                        \
+                                 LOGGER_LOG_HELPER_IMPL_TAG_GETTER(logger) __VA_OPT__(, ) __VA_ARGS__);                \
     } while (0)
 
 #define LOGGER_LOG_HELPER(tag, level, msg, ...)                                                                        \
