@@ -16,9 +16,9 @@
  */
 #ifndef VENDOR_LOGGING_UART_SINK_H
 #define VENDOR_LOGGING_UART_SINK_H
+#include "mt_sink.h"
 #include "sink.h"
 #include "usart.h"
-#include "mt_sink.h"
 
 namespace Logging {
 

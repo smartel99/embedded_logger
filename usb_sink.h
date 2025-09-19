@@ -28,7 +28,7 @@ namespace Logging {
 class UsbSink : public Sink {
 private:
     static constexpr std::size_t s_maxWaitTime    = pdMS_TO_TICKS(100);
-    CDC_DeviceInfo*              m_usb            = nullptr;
+    struct CDC_DeviceInfo*              m_usb            = nullptr;
 
     std::size_t m_bufferSize      = 0;
     std::size_t m_droppedMessages = 0;

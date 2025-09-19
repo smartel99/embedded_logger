@@ -135,18 +135,13 @@ public:
 };
 }    // namespace Logging
 
-#ifdef __GNUC__
-#    define LOGGER_HELPER_MSG_IS_STRING_LITERAL(x)                                                                     \
-        static_assert(__builtin_constant_p(x) == 1, "msg must be a string literal!");
-#else
-#    define LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL(x)                                                                \
-        ([&]<typename T = char>() {                                                                                    \
-            return std::is_same_v<decltype(x), T const(&)[sizeof(x)]> &&                                               \
-                   requires { std::type_identity_t<T[sizeof(x) + 1]> {x}; };                                           \
-        }())
-#    define LOGGER_HELPER_MSG_IS_STRING_LITERAL(x)                                                                     \
-        static_assert(LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL(x), "msg must be a string literal!")
-#endif
+#define LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL(x)                                                                    \
+    ([&]<typename T = char>() {                                                                                        \
+        return std::is_same_v<decltype(x), T const(&)[sizeof(x)]> &&                                                   \
+               requires { std::type_identity_t<T[sizeof(x) + 1]> {x}; };                                               \
+    }())
+#define LOGGER_HELPER_MSG_IS_STRING_LITERAL(x)                                                                         \
+    static_assert(LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL(x), "msg must be a string literal!")
 
 // Clang-tidy is recommending that size information should be provided as well since std::string_view::data() is not
 // guaranteed to be null-terminated. However:
