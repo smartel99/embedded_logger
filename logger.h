@@ -22,7 +22,6 @@
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 #include "level.h"
@@ -32,36 +31,38 @@
 namespace Logging {
 class Logger {
     struct LoggerInstance {
+        std::string_view                                  tag;
         std::optional<Level>                              level = std::nullopt;
-        std::optional<std::vector<std::unique_ptr<Sink>>> sinks = std::nullopt;
     };
 
 public:
     struct LoggerView {
         std::string_view                    tag;
         Level*                              level = &s_globalLevel;
-        std::vector<std::unique_ptr<Sink>>* sinks = &s_globalSinks;
 
         bool shouldLog(Level desiredLevel) const { return desiredLevel <= *level; }
     };
 
-    using GetTimeFunc = std::uint32_t (*)();
+    using GetTimeFunc   = std::uint32_t (*)();
+    using LoggerStorage = std::vector<LoggerInstance>;
 
 private:
-    //! print number of bytes per line for writeHexArray and writeCharArray
+    //! print the number of bytes per line for writeHexArray and writeCharArray
     static constexpr std::size_t                     s_bytesPerLine = 16;
     static constexpr Level                           s_defaultLevel = Level::all;
     inline static Level                              s_globalLevel  = s_defaultLevel;
     inline static std::vector<std::unique_ptr<Sink>> s_globalSinks  = {};
 
-    inline static std::unordered_map<std::string_view, LoggerInstance> s_loggers = {};
-    inline static GetTimeFunc                                          s_getTime = [] -> std::uint32_t { return 0; };
+    inline static LoggerStorage s_loggers = {};
+    inline static GetTimeFunc   s_getTime = [] -> std::uint32_t { return 0; };
+
+    static LoggerStorage::iterator getLoggerInstance(std::string_view tag);
 
 public:
     static void          setGetTime(GetTimeFunc getTime);
     static std::uint32_t getTime() { return s_getTime(); }
 
-    static LoggerView getLogger(std::string_view tag);
+    static LoggerView& getLogger(std::string_view tag);
 
     // TODO: This should allow us to add an already existing sink...
     template<typename T, typename... Args>
@@ -76,22 +77,11 @@ public:
     static Level getLevel() { return s_globalLevel; }
     static void  clearLevel() { s_globalLevel = s_defaultLevel; }
 
-    template<typename T, typename... Args>
-        requires std::derived_from<T, Sink> && std::constructible_from<T, Args...>
-    static T* addSink(std::string_view tag, Args&&... args)
-    {
-        auto& sink = s_loggers[tag];
-        if (!sink.sinks) { sink.sinks = std::vector<std::unique_ptr<Sink>> {}; }
-        sink.sinks->push_back(std::make_unique<T>(std::forward<Args>(args)...));
-        return static_cast<T*>(sink.sinks->back().get());
-    }
-
-    static void  clearSinks(std::string_view tag);
     static void  setLevel(std::string_view tag, Level level);
     static Level getLevel(std::string_view tag);
     static void  clearLevel(std::string_view tag);
 
-    static void write(LoggerView logger, Level level, const char* fmt, ...);
+    static void write(LoggerView logger, Level level, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
     static void vWrite(LoggerView logger, Level level, const char* fmt, va_list args);
 
     /**
@@ -152,13 +142,14 @@ public:
 
 #define LOGGER_LOG_HELPER_IMPL(logger, level, msg, ...)                                                                \
     do {                                                                                                               \
-        LOGGER_HELPER_MSG_IS_STRING_LITERAL(msg);                                                                      \
-        ::Logging::Logger::write(logger,                                                                               \
+        ::Logging::Logger::LoggerView _loggerView = logger; /*NOLINT(*-const-correctness)*/                            \
+        LOGGER_HELPER_MSG_IS_STRING_LITERAL(msg);           /* NOLINT(*-avoid-c-arrays) */                             \
+        ::Logging::Logger::write(_loggerView,                                                                          \
                                  level,                                                                                \
                                  "%c (%05lu) [%s] " msg "\r\n",                                                        \
                                  ::Logging::levelToChar(level),                                                        \
                                  ::Logging::Logger::getTime(),                                                         \
-                                 LOGGER_LOG_HELPER_IMPL_TAG_GETTER(logger) __VA_OPT__(, ) __VA_ARGS__);                \
+                                 LOGGER_LOG_HELPER_IMPL_TAG_GETTER(_loggerView) __VA_OPT__(, ) __VA_ARGS__);           \
     } while (0)
 
 #define LOGGER_LOG_HELPER(tag, level, msg, ...)                                                                        \

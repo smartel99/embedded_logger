@@ -22,7 +22,15 @@
 #include <cstdio>
 
 namespace Logging {
-void Logger::setGetTime(Logger::GetTimeFunc getTime)
+Logger::LoggerStorage::iterator Logger::getLoggerInstance(std::string_view tag)
+{
+    for (auto it = s_loggers.begin(); it != s_loggers.end(); ++it) {
+        if (it->tag == tag) { return it; }
+    }
+    return s_loggers.end();
+}
+
+void Logger::setGetTime(GetTimeFunc getTime)
 {
     assert(getTime != nullptr && "getTime func can't be null!");
     s_getTime = getTime;
@@ -30,6 +38,10 @@ void Logger::setGetTime(Logger::GetTimeFunc getTime)
 
 void Logger::write(LoggerView logger, Level level, const char* fmt, ...)
 {
+    if (!logger.shouldLog(level)) {
+        // This level is disabled.
+        return;
+    }
     va_list args;
     va_start(args, fmt);
     vWrite(logger, level, fmt, args);
@@ -43,63 +55,49 @@ void Logger::vWrite(LoggerView logger, Level level, const char* fmt, va_list arg
         return;
     }
     static constexpr size_t maxLength = 512;
-    char                    buffer[maxLength];
+    static char             buffer[maxLength];
     size_t                  length = vsnprintf(&buffer[0], maxLength, fmt, args);
     assert(length < maxLength && "String too long to be logged");
-    for (auto&& sink : *logger.sinks) {
+    for (auto&& sink : s_globalSinks) {
         sink->onWrite(level, &buffer[0], length);
     }
 }
 
-void Logger::clearSinks(std::string_view tag)
-{
-    auto it = s_loggers.find(tag);
-    // logger doesn't exist, do nothing.
-    if (it == s_loggers.end()) { return; }
-    it->second.sinks = std::nullopt;
-
-    // If the logger doesn't have a custom level, straight up delete it from the list, it is useless now.
-    if (!it->second.level.has_value()) { s_loggers.erase(it); }
-}
-
 void Logger::setLevel(std::string_view tag, Level level)
 {
-    s_loggers[tag].level = level;
+    auto it = getLoggerInstance(tag);
+    if (it != s_loggers.end()) {
+        it->level = level;
+        return;
+    }
+    s_loggers.emplace_back(tag, level);
 }
 
 Level Logger::getLevel(std::string_view tag)
 {
-    auto [t, level, sinks] = getLogger(tag);
+    auto [t, level] = getLogger(tag);
     return *level;
 }
 
 void Logger::clearLevel(std::string_view tag)
 {
-    auto it = s_loggers.find(tag);
+    auto it = getLoggerInstance(tag);
     // logger doesn't exist, do nothing.
     if (it == s_loggers.end()) { return; }
-    it->second.level = std::nullopt;
-
-    // If the logger doesn't have custom sinks, straight up delete it from the list, it is useless now.
-    if (!it->second.sinks.has_value()) {
-        s_loggers.erase(it);
-    }
+    it->level = std::nullopt;
 }
 
-Logger::LoggerView Logger::getLogger(std::string_view tag)
+Logger::LoggerView& Logger::getLogger(std::string_view tag)
 {
-    LoggerView logger = {.tag = tag, .level = &s_globalLevel, .sinks = &s_globalSinks};
-
-    auto loggerIt = s_loggers.find(tag);
-    if (loggerIt != s_loggers.end()) {
-        if (loggerIt->second.level.has_value()) { logger.level = &loggerIt->second.level.value(); }
-        if (loggerIt->second.sinks.has_value()) { logger.sinks = &loggerIt->second.sinks.value(); }
+    static LoggerView loggerView = {.tag = tag, .level = &s_globalLevel};
+    loggerView                   = {.tag = tag, .level = &s_globalLevel};
+    if (auto loggerIt = getLoggerInstance(tag); loggerIt != s_loggers.end()) {
+        if (loggerIt->level.has_value()) { loggerView.level = &loggerIt->level.value(); }
     }
-
-    return logger;
+    return loggerView;
 }
 
-void Logger::writeHexArray(Logger::LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
+void Logger::writeHexArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
 {
     if (!logger.shouldLog(level)) { return; }
     if (len == 0 || buff == nullptr) { return; }
@@ -123,7 +121,7 @@ void Logger::writeHexArray(Logger::LoggerView logger, Level level, const std::ui
     } while (len != 0);
 }
 
-void Logger::writeCharArray(Logger::LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
+void Logger::writeCharArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
 {
     if (!logger.shouldLog(level)) { return; }
     if (len == 0 || buff == nullptr) { return; }
@@ -147,7 +145,7 @@ void Logger::writeCharArray(Logger::LoggerView logger, Level level, const std::u
     } while (len != 0);
 }
 
-void Logger::writeHexdumpArray(Logger::LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
+void Logger::writeHexdumpArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
 {
     if (!logger.shouldLog(level)) { return; }
     if (len == 0 || buff == nullptr) { return; }
