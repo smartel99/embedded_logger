@@ -36,19 +36,28 @@ void Logger::setGetTime(GetTimeFunc getTime)
     s_getTime = getTime;
 }
 
-void Logger::write(LoggerView logger, Level level, const char* fmt, ...)
+void Logger::write(const char* fmt, ...)
 {
-    if (!logger.shouldLog(level)) {
-        // This level is disabled.
-        return;
-    }
     va_list args;
     va_start(args, fmt);
-    vWrite(logger, level, fmt, args);
+    vWrite(fmt, args);
     va_end(args);
 }
 
-void Logger::vWrite(LoggerView logger, Level level, const char* fmt, va_list args)
+void Logger::vWrite(const char* fmt, va_list args)
+{
+    vLog(getLogger(""), Level::none, fmt, args);
+}
+
+void Logger::log(LoggerView logger, Level level, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vLog(logger, level, fmt, args);
+    va_end(args);
+}
+
+void Logger::vLog(LoggerView logger, Level level, const char* fmt, va_list args)
 {
     if (!logger.shouldLog(level)) {
         // This level is disabled.
@@ -97,7 +106,30 @@ Logger::LoggerView& Logger::getLogger(std::string_view tag)
     return loggerView;
 }
 
-void Logger::writeHexArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
+void Logger::writeHexArray(const std::uint8_t* buff, std::size_t len)
+{
+    if (len == 0 || buff == nullptr) { return; }
+    char                hexBuffer[3 * s_bytesPerLine + 1];
+    const std::uint8_t* ptrLine      = nullptr;
+    std::size_t         bytesCurLine = 0;
+
+    do {
+        if (len > s_bytesPerLine) { bytesCurLine = s_bytesPerLine; }
+        else {
+            bytesCurLine = len;
+        }
+        ptrLine = buff;
+
+        for (std::size_t i = 0; i < bytesCurLine; i++) {
+            std::snprintf(&hexBuffer[0] + 3 * i, sizeof(hexBuffer) - (3 * i), "%02x ", ptrLine[i]);
+        }
+        write("%s", &hexBuffer[0]);
+        buff += bytesCurLine;
+        len -= bytesCurLine;
+    } while (len != 0);
+}
+
+void Logger::logHexArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
 {
     if (!logger.shouldLog(level)) { return; }
     if (len == 0 || buff == nullptr) { return; }
@@ -121,7 +153,30 @@ void Logger::writeHexArray(LoggerView logger, Level level, const std::uint8_t* b
     } while (len != 0);
 }
 
-void Logger::writeCharArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
+void Logger::writeCharArray(const std::uint8_t* buff, std::size_t len)
+{
+    if (len == 0 || buff == nullptr) { return; }
+    char                charBuffer[s_bytesPerLine + 1];
+    const std::uint8_t* ptrLine      = nullptr;
+    std::size_t         bytesCurLine = 0;
+
+    do {
+        if (len > s_bytesPerLine) { bytesCurLine = s_bytesPerLine; }
+        else {
+            bytesCurLine = len;
+        }
+        ptrLine = buff;
+
+        for (std::size_t i = 0; i < bytesCurLine; i++) {
+            sprintf(&charBuffer[0] + i, "%c", ptrLine[i]);
+        }
+        write("%s", &charBuffer[0]);
+        buff += bytesCurLine;
+        len -= bytesCurLine;
+    } while (len != 0);
+}
+
+void Logger::logCharArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
 {
     if (!logger.shouldLog(level)) { return; }
     if (len == 0 || buff == nullptr) { return; }
@@ -145,7 +200,48 @@ void Logger::writeCharArray(LoggerView logger, Level level, const std::uint8_t* 
     } while (len != 0);
 }
 
-void Logger::writeHexdumpArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
+void Logger::writeHexdumpArray(const std::uint8_t* buff, std::size_t len)
+{
+    if (len == 0 || buff == nullptr) { return; }
+    const std::uint8_t* ptrLine = nullptr;
+    // format: field[length]
+    //  ADDR[10]+"   "+DATA_HEX[8*3]+" "+DATA_HEX[8*3]+"  |"+DATA_CHAR[8]+"|"
+    char        hdBuffer[10 + 3 + s_bytesPerLine * 3 + 3 + s_bytesPerLine + 1 + 1];
+    char*       ptrHd        = nullptr;
+    std::size_t bytesCurLine = 0;
+
+    do {
+        if (len > s_bytesPerLine) { bytesCurLine = s_bytesPerLine; }
+        else {
+            bytesCurLine = len;
+        }
+        ptrLine = buff;
+        ptrHd   = &hdBuffer[0];
+
+        ptrHd += std::sprintf(ptrHd, "%p ", reinterpret_cast<const void*>(buff));
+        for (std::size_t i = 0; i < s_bytesPerLine; i++) {
+            if ((i & 7) == 0) { ptrHd += std::sprintf(ptrHd, " "); }
+            if (i < bytesCurLine) { ptrHd += std::sprintf(ptrHd, " %02x", ptrLine[i]); }
+            else {
+                ptrHd += std::sprintf(ptrHd, "   ");
+            }
+        }
+        ptrHd += std::sprintf(ptrHd, "  |");
+        for (std::size_t i = 0; i < bytesCurLine; i++) {
+            if (std::isprint(static_cast<int>(ptrLine[i])) != 0) { ptrHd += std::sprintf(ptrHd, "%c", ptrLine[i]); }
+            else {
+                ptrHd += std::sprintf(ptrHd, ".");
+            }
+        }
+        ptrHd += std::sprintf(ptrHd, "|");
+
+        write("%s", &hdBuffer[0]);
+        buff += bytesCurLine;
+        len -= bytesCurLine;
+    } while (len != 0);
+}
+
+void Logger::logHexdumpArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len)
 {
     if (!logger.shouldLog(level)) { return; }
     if (len == 0 || buff == nullptr) { return; }
@@ -186,5 +282,4 @@ void Logger::writeHexdumpArray(LoggerView logger, Level level, const std::uint8_
         len -= bytesCurLine;
     } while (len != 0);
 }
-
 }    // namespace Logging

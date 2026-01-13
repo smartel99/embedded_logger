@@ -31,14 +31,14 @@
 namespace Logging {
 class Logger {
     struct LoggerInstance {
-        std::string_view                                  tag;
-        std::optional<Level>                              level = std::nullopt;
+        std::string_view     tag;
+        std::optional<Level> level = std::nullopt;
     };
 
 public:
     struct LoggerView {
-        std::string_view                    tag;
-        Level*                              level = &s_globalLevel;
+        std::string_view tag;
+        Level*           level = &s_globalLevel;
 
         bool shouldLog(Level desiredLevel) const { return desiredLevel <= *level; }
     };
@@ -81,8 +81,12 @@ public:
     static Level getLevel(std::string_view tag);
     static void  clearLevel(std::string_view tag);
 
-    static void write(LoggerView logger, Level level, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
-    static void vWrite(LoggerView logger, Level level, const char* fmt, va_list args);
+    static void write(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+    static void vWrite(const char* fmt, va_list args);
+    static void log(LoggerView logger, Level level, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
+    static void vLog(LoggerView logger, Level level, const char* fmt, va_list args);
+
+    static void writeHexArray(const std::uint8_t* buff, std::size_t len);
 
     /**
      * @brief Log a buffer of hex bytes at specified level, separated into 16 bytes each line.
@@ -92,7 +96,9 @@ public:
      * @param  buf   Pointer to the buffer array
      * @param  len length of buffer in bytes
      */
-    static void writeHexArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len);
+    static void logHexArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len);
+
+    static void writeCharArray(const std::uint8_t* buff, std::size_t len);
 
     /**
      * @brief Log a buffer of characters at specified level, separated into 16 bytes each line. Buffer should contain
@@ -103,7 +109,10 @@ public:
      * @param  buf   Pointer to the buffer array
      * @param  len length of buffer in bytes
      */
-    static void writeCharArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len);
+    static void logCharArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len);
+
+
+    static void writeHexdumpArray(const std::uint8_t* buff, std::size_t len);
 
     /**
      * @brief Dump a buffer to the log at specified level.
@@ -121,7 +130,7 @@ public:
      * @param  buf Pointer to the buffer array
      * @param  len length of buffer in bytes
      */
-    static void writeHexdumpArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len);
+    static void logHexdumpArray(LoggerView logger, Level level, const std::uint8_t* buff, std::size_t len);
 };
 }    // namespace Logging
 
@@ -144,12 +153,12 @@ public:
     do {                                                                                                               \
         ::Logging::Logger::LoggerView _loggerView = logger; /*NOLINT(*-const-correctness)*/                            \
         LOGGER_HELPER_MSG_IS_STRING_LITERAL(msg);           /* NOLINT(*-avoid-c-arrays) */                             \
-        ::Logging::Logger::write(_loggerView,                                                                          \
-                                 level,                                                                                \
-                                 "%c (%05lu) [%s] " msg "\r\n",                                                        \
-                                 ::Logging::levelToChar(level),                                                        \
-                                 ::Logging::Logger::getTime(),                                                         \
-                                 LOGGER_LOG_HELPER_IMPL_TAG_GETTER(_loggerView) __VA_OPT__(, ) __VA_ARGS__);           \
+        ::Logging::Logger::log(_loggerView,                                                                            \
+                               level,                                                                                  \
+                               "%c (%05lu) [%s] " msg "\r\n",                                                          \
+                               ::Logging::levelToChar(level),                                                          \
+                               ::Logging::Logger::getTime(),                                                           \
+                               LOGGER_LOG_HELPER_IMPL_TAG_GETTER(_loggerView) __VA_OPT__(, ) __VA_ARGS__);             \
     } while (0)
 
 #define LOGGER_LOG_HELPER(tag, level, msg, ...)                                                                        \
@@ -170,7 +179,7 @@ public:
 #define ROOT_LOGE(msg, ...) LOGE(ROOT_LOGGER_TAG, msg __VA_OPT__(, ) __VA_ARGS__)
 
 #define LOGGER_LOG_BUFFER_DUMP_HELPER(kind, tag, level, buff, len)                                                     \
-    ::Logging::Logger::write##kind##Array(::Logging::Logger::getLogger(tag), level, buff, len)
+    ::Logging::Logger::log##kind##Array(::Logging::Logger::getLogger(tag), level, buff, len)
 
 #define LOG_BUFFER_HEX_LEVEL(tag, level, buffer, len)  LOGGER_LOG_BUFFER_DUMP_HELPER(Hex, tag, level, buffer, len)
 #define LOG_BUFFER_CHAR_LEVEL(tag, level, buffer, len) LOGGER_LOG_BUFFER_DUMP_HELPER(Char, tag, level, buffer, len)
