@@ -65,7 +65,8 @@ void Logger::vLog(LoggerView logger, Level level, const char* fmt, va_list args)
     }
     static constexpr size_t maxLength = 512;
     static char             buffer[maxLength];
-    size_t                  length = vsnprintf(&buffer[0], maxLength, fmt, args);
+    // This function uses a lot of stack memory, be sure to allocate enough!
+    size_t length = vsnprintf(&buffer[0], maxLength, fmt, args);
     assert(length < maxLength && "String too long to be logged");
     for (auto&& sink : s_globalSinks) {
         sink->onWrite(level, &buffer[0], length);
