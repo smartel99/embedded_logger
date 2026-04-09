@@ -135,9 +135,9 @@ public:
 }    // namespace Logging
 
 #define LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL(x)                                                                    \
-    ([&]<typename T = char>() {                                                                                        \
-        return std::is_same_v<decltype(x), T const(&)[sizeof(x)]> &&                                                   \
-               requires { std::type_identity_t<T[sizeof(x) + 1]> {x}; };                                               \
+    ([&]<typename LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL_T = char>() {                                                                                        \
+        return std::is_same_v<decltype(x), LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL_T const(&)[sizeof(x)]> &&                                                   \
+               requires { std::type_identity_t<LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL_T[sizeof(x) + 1]> {x}; };                                               \
     }())
 #define LOGGER_HELPER_MSG_IS_STRING_LITERAL(x)                                                                         \
     static_assert(LOGGER_HELPER_MSG_IS_STRING_LITERAL_IMPL(x), "msg must be a string literal!")
